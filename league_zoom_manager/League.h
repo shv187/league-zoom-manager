@@ -9,7 +9,7 @@ class League
 private:
     enum RVA : uintptr_t
     {
-        hud_instance = 0x20DD7D8
+        hud_instance = 0x210DDD8
     };
 
     enum HudInstance : uintptr_t
