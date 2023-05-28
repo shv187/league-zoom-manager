@@ -27,7 +27,8 @@ However It's prohibited by League to use this in standard game as It gives u an 
 <img src="./league_zoom_manager/preview/ui.png" width="512"/>
 
 ## Some Info
-Updated as of 13.9, in the future I can add pattern scanning or any other option that wont require recompilation every patch.
+~~Updated as of 13.10, in the future I can add pattern scanning or any other option that wont require recompilation every patch.~~
+Pattern scanning already implemented, however It takes some time every game launch. I'll try to improve It in future updates.
 
 It's really easy to add fov changer if anyone is intrested in it, as It's basically in the source already.
 
