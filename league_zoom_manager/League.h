@@ -7,21 +7,11 @@
 class League
 {
 private:
-    enum RVA : uintptr_t
-    {
-        hud_instance = 0x210DDD8
-    };
-
-    enum HudInstance : uintptr_t
-    {
-        is_background_window = 0xB9,
-        camera = 0x18
-    };
-
     enum Camera : uintptr_t
     {
-        fov = 0x1B4,
-        height = 0x2BC
+        // left it here cuz i cba searching for unique patterns
+        // as its not used anyways
+        fov = 0x1B4
     };
 
 public:
