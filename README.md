@@ -6,6 +6,8 @@ Can be used to record cool replays etc.
 
 However It's prohibited by League to use this in standard game as It gives u an adventage, so I recommend not doing so.
 
+**🚩 As stated in [issue](https://github.com/shv187/league-zoom-manager/issues/2) by @myo, It does not bypass League's checks so It may and mostlikely will flag and eventually ban your account. Use It only on 'throwaway' accounts :)**
+
 ## Usage
 <kbd>←</kbd> and <kbd>→</kbd> adjusts zoom by 50u.
 
