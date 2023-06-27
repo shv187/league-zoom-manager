@@ -14,10 +14,29 @@ private:
         fov = 0x1B4
     };
 
+    enum Client : uintptr_t
+    {
+        state = 0xC
+    };
+
 public:
     League();
 
 public:
+    // ty
+    // https://github.com/R3nzTheCodeGOD/R3nzSkin/blob/eba74d3b5b056d6f31681a3ecd84ccab2c05db9b/R3nzSkin/SDK/GameState.hpp#L5
+    enum game_state : int32_t
+    {
+        loading_screen = 0,
+        connecting = 1,
+        running = 2,
+        paused = 3,
+        finished = 4,
+        exiting = 5
+    };
+
+    game_state get_game_state();
+
     void set_camera_height(float new_height);
     void set_camera_fov(float new_fov);
 
@@ -37,6 +56,10 @@ private:
     uintptr_t m_base_module{};
 
 private:
+    uintptr_t m_client_instance{};
     uintptr_t m_hud_instance{};
     uintptr_t m_camera_instance{};
+
+private:
+    bool m_initialized{ false };
 };

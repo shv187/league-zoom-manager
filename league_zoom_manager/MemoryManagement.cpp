@@ -1,31 +1,34 @@
 #include "MemoryManagement.h"
 
+#include "exceptions.h"
+
 #include <vector>
 #include <sstream>
+#include <iostream>
 
 #include <windows.h>
 #include <tlhelp32.h> 
 
 namespace memory_management
 {
-    const uintptr_t get_module_address(DWORD process_id, const wchar_t* module_name)
+    const module_t get_module_data(DWORD process_id, const wchar_t* module_name)
     {
-        HANDLE snapshot_handle = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id);
-
+        auto snapshot_handle = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id);
         if (snapshot_handle == INVALID_HANDLE_VALUE)
-            return 0;
+            THROW_EXCEPTION("Failed while getting snapshot of modules");
 
-        uintptr_t address{};
         MODULEENTRY32 module_entry{};
         module_entry.dwSize = sizeof(module_entry);
 
+        module_t module_data{};
         if (Module32First(snapshot_handle, &module_entry))
         {
             do
             {
-                if (!_wcsicmp(module_entry.szModule, module_name))
+                if (wcscmp(module_entry.szModule, module_name) == 0)
                 {
-                    address = reinterpret_cast<uintptr_t>(module_entry.modBaseAddr);
+                    module_data.base_address = reinterpret_cast<uintptr_t>(module_entry.modBaseAddr);
+                    module_data.size = module_entry.modBaseSize;
                     break;
                 }
             } while (Module32Next(snapshot_handle, &module_entry));
@@ -33,35 +36,7 @@ namespace memory_management
 
         CloseHandle(snapshot_handle);
 
-        return address;
-    }
-
-    const uintptr_t get_module_size(DWORD process_id, const wchar_t* module_name)
-    {
-        HANDLE snapshot_handle = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, process_id);
-
-        if (snapshot_handle == INVALID_HANDLE_VALUE)
-            return 0;
-
-        uintptr_t size{};
-        MODULEENTRY32 module_entry{};
-        module_entry.dwSize = sizeof(module_entry);
-
-        if (Module32First(snapshot_handle, &module_entry))
-        {
-            do
-            {
-                if (!_wcsicmp(module_entry.szModule, module_name))
-                {
-                    size = module_entry.modBaseSize;
-                    break;
-                }
-            } while (Module32Next(snapshot_handle, &module_entry));
-        }
-
-        CloseHandle(snapshot_handle);
-
-        return size;
+        return module_data;
     }
 
     const std::vector<int> pattern_to_bytes(const std::string_view input)
@@ -94,24 +69,26 @@ namespace memory_management
         return GetProcessId(handle);
     }
 
-    uintptr_t find_pattern(const HANDLE process_handle, const std::string_view module_name, const std::string_view pattern)
+    uintptr_t find_pattern(const HANDLE process_handle, const std::wstring_view module_name, const std::string_view pattern)
     {
-        const auto process_id = get_process_id_from_process_handle(process_handle);
+        const auto module_data = get_module_data(get_process_id_from_process_handle(process_handle), module_name.data());
 
-        const auto wide_string = std::wstring(module_name.begin(), module_name.end());
-        const auto module_base = get_module_address(process_id, wide_string.c_str());
-        const auto module_size = get_module_size(process_id, wide_string.c_str());
-
-        if (!module_base)
+        if (!module_data.base_address || !module_data.size)
             return {};
+
+        std::cout << std::format("Finding {}\n", pattern);
 
         const auto pattern_bytes{ pattern_to_bytes(pattern) };
 
+        const auto dos_header = read_vm<IMAGE_DOS_HEADER>(process_handle, module_data.base_address);
+        const auto nt_headers = read_vm<IMAGE_NT_HEADERS>(process_handle, module_data.base_address + dos_header.e_lfanew);
+
+        const auto _text_offset = nt_headers.OptionalHeader.BaseOfCode;
+        const auto _text_size = nt_headers.OptionalHeader.SizeOfCode;
+
         MEMORY_BASIC_INFORMATION mbi{};
 
-        VirtualQueryEx(process_handle, (LPCVOID)module_base, &mbi, sizeof(mbi));
-
-        for (uintptr_t region_address = module_base; region_address < module_base + module_size; region_address += mbi.RegionSize)
+        for (uintptr_t region_address = module_data.base_address + _text_offset; region_address < module_data.base_address + _text_offset + _text_size - pattern_bytes.size(); region_address += (mbi.RegionSize + 1))
         {
             if (!VirtualQueryEx(process_handle, reinterpret_cast<void*>(region_address), &mbi, sizeof(mbi)))
                 continue;
@@ -119,18 +96,27 @@ namespace memory_management
             if (mbi.State != MEM_COMMIT || mbi.Protect == PAGE_NOACCESS)
                 continue;
 
-            for (uintptr_t current_address = region_address; region_address < module_base + mbi.RegionSize; current_address++)
+            for (uintptr_t current_address = region_address; region_address < reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize; current_address++)
             {
                 bool at_current_address{ true };
-                for (size_t idx{}; idx < pattern_bytes.size(); idx++)
-                {
-                    uint8_t byte{ read_vm<uint8_t>(process_handle, current_address + idx) };
 
-                    if (pattern_bytes[idx] != (-1) && pattern_bytes[idx] != byte)
+                std::vector<uint8_t> buffer(pattern_bytes.size());
+                ReadProcessMemory(process_handle, (void*)current_address, buffer.data(), pattern_bytes.size(), 0);
+
+                auto compare = [&](const std::vector<int>& pattern_vector, const std::vector<uint8_t>& buffer) {
+                    for (size_t i = 0; i < pattern_vector.size(); i++)
                     {
-                        at_current_address = false;
-                        break;
+                        if (pattern_vector[i] != buffer[i] && pattern_vector[i] != -1)
+                            return false;
                     }
+
+                    return true;
+                };
+
+                if (!compare(pattern_bytes, buffer))
+                {
+                    at_current_address = false;
+                    continue;
                 }
 
                 if (at_current_address)
@@ -141,7 +127,7 @@ namespace memory_management
         return {};
     }
 
-    uintptr_t find_with_multiple_patterns(const HANDLE process_handle, const std::string_view module_name, std::vector<std::string_view> patterns)
+    uintptr_t find_with_multiple_patterns(const HANDLE process_handle, const std::wstring_view module_name, std::vector<std::string_view> patterns)
     {
         for (auto& pattern : patterns)
         {
